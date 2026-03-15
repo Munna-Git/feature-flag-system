@@ -1,36 +1,42 @@
-# Feature Flag Service
+# 🚩 Feature Flag Service
 
-A backend microservice that enables **controlled feature rollouts** to users using deterministic hashing and percentage-based rollout strategies.
-The service allows teams to safely release new features, run experiments, and quickly disable problematic functionality without redeploying the application.
+A production-grade backend microservice for **controlled feature rollouts** using deterministic hashing, percentage-based strategies, and Redis-backed caching. Built for teams that need to ship fast without breaking things.
 
-The system is implemented using **FastAPI**, **PostgreSQL**, **Redis**, and **Docker**.
-
----
-
-# Problem Statement
-
-Deploying new features directly to all users in production is risky. A newly released feature may introduce bugs, performance issues, or unintended side effects.
-
-If a feature causes problems after deployment, rolling it back often requires:
-
-* redeploying the application
-* reverting commits
-* downtime or degraded user experience
-
-Modern software systems solve this problem using **feature flags**.
-
-Feature flags allow developers to:
-
-* enable or disable features dynamically
-* release features gradually
-* test features with a subset of users
-* instantly disable problematic functionality
-
-This project implements a **Feature Flag Service** that allows controlled feature rollouts without requiring application redeployments.
+> Enable features for 1% of users. Then 10%. Then everyone — all without a single redeployment.
 
 ---
 
-# What is a Feature Flag?
+## Table of Contents
+
+- [Overview](#overview)
+- [Why Feature Flags?](#why-feature-flags)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [System Architecture](#system-architecture)
+- [Database Design](#database-design)
+- [Rollout Logic](#rollout-logic)
+- [Caching Strategy](#caching-strategy)
+- [API Reference](#api-reference)
+- [Getting Started](#getting-started)
+- [Example Walkthrough](#example-walkthrough)
+- [Future Improvements](#future-improvements)
+
+---
+
+## Overview
+
+The Feature Flag Service is a backend microservice that lets engineering teams:
+
+- **Gradually roll out** new features to a percentage of users
+- **Instantly disable** problematic functionality without redeploying
+- **Run A/B tests** and experiments with consistent user targeting
+- **Decouple feature releases** from code deployments
+
+It is built with **FastAPI**, **PostgreSQL**, **Redis**, and **Docker**, designed for low-latency evaluation and high reliability.
+
+---
+
+## Why Feature Flags?
 
 Shipping code directly to 100% of users is risky. A new feature might introduce:
 
@@ -43,42 +49,26 @@ Traditional rollback requires reverting commits, redeploying the app, and often 
 Feature flags solve this by separating **code deployment** from **feature activation**:
 
 ```
-If feature "ai_search" is enabled
-    show new search experience
-else
-    show old search system
+if feature_enabled("ai_search", user_id):
+    show_new_search()
+else:
+    show_legacy_search()
 ```
 
-Feature flags are commonly used for:
-
-* gradual feature rollouts
-* A/B testing
-* experimentation
-* emergency feature shutdowns
-* safe production deployments
-
-Large-scale systems used by companies such as **Netflix**, **Amazon**, and **Google** rely heavily on feature flag systems.
+Used by **Netflix**, **Amazon**, **Google**, and virtually every modern software company at scale.
 
 ---
 
-# Tech Stack
+## Tech Stack
 
-This project uses the following technologies:
-
-**FastAPI**
-A high-performance Python web framework used to build the REST API.
-
-**PostgreSQL**
-Relational database used to store feature flag configurations.
-
-**Redis**
-In-memory caching system used to store feature flag data for faster access.
-
-**Docker**
-Containerization platform used to package the service and its dependencies for consistent deployment.
+| Technology   | Role                                              |
+|--------------|---------------------------------------------------|
+| **FastAPI**  | High-performance Python REST API framework        |
+| **PostgreSQL** | Persistent storage for feature flag configurations |
+| **Redis**    | In-memory caching layer for fast flag evaluation  |
+| **Docker**   | Containerized deployment for consistent environments |
 
 ---
-
 
 ## Project Structure
 
@@ -113,6 +103,7 @@ feature-flag-service/
 └── requirements.txt              # Python dependencies
 ```
 
+---
 
 ## System Architecture
 
@@ -143,7 +134,6 @@ feature-flag-service/
 └─────────────────────┘   └───────────────────────────┘
 ```
 
-
 ### Request Lifecycle
 
 ```
@@ -168,10 +158,11 @@ Cache HIT  Cache MISS
 7. Return { "feature": "...", "enabled": true/false }
 ```
 
+---
 
-# Database Design
+## Database Design
 
-The system stores feature flags in a table called **feature_flags**.
+Feature flags are stored in the `feature_flags` table in PostgreSQL.
 
 ### Schema
 
@@ -182,14 +173,14 @@ The system stores feature flags in a table called **feature_flags**.
 | `enabled`            | Boolean   | Master switch — if false, feature is off for everyone |
 | `rollout_percentage` | Integer   | % of users (0–100) who receive the feature           |
 
+### Example Records
 
-Example record:
-
-| feature_name | enabled | rollout_percentage |
-| ------------ | ------- | ------------------ |
-| ai_search    | true    | 20                 |
-
-This means the **AI Search feature is enabled for 20% of users**.
+| feature_name       | enabled | rollout_percentage |
+|--------------------|---------|--------------------|
+| `ai_search`        | true    | 20                 |
+| `dark_mode`        | true    | 100                |
+| `new_checkout`     | false   | 0                  |
+| `recommendation_v2`| true    | 5                  |
 
 ---
 
@@ -233,13 +224,9 @@ This approach ensures:
 
 ---
 
-# Redis Caching Strategy
+## Caching Strategy
 
-Querying the database for every request would introduce unnecessary latency and load.
-
-To improve performance, feature configurations are cached in **Redis**.
-
-### Cache Flow
+Every feature evaluation hits the service at high frequency. Querying PostgreSQL on every request would introduce unnecessary latency.
 
 ### Cache-Aside Pattern
 
@@ -264,27 +251,28 @@ Return config → run rollout logic → respond
 
 ### Cache Invalidation
 
-Whenever a feature is:
+The cache is invalidated immediately on any write operation:
 
-* created
-* updated
-* deleted
+| Operation         | Cache Action              |
+|-------------------|---------------------------|
+| `POST /feature`   | Invalidate (new key set)  |
+| `PUT /feature`    | Invalidate updated key    |
+| `DELETE /feature` | Remove key from Redis     |
 
-The cache is invalidated to ensure the latest configuration is used.
+This ensures the API always reflects the latest configuration.
 
 ---
 
-# API Endpoints
+## API Reference
 
-The service exposes the following endpoints.
+Base URL: `http://localhost:8000`
 
-### Get All Features
+Interactive docs: `http://localhost:8000/docs`
 
-```
-GET /features
-```
+---
 
-Returns a list of all configured features.
+### `GET /features`
+Returns all configured feature flags.
 
 **Response**
 ```json
@@ -300,12 +288,7 @@ Returns a list of all configured features.
 
 ---
 
-### Create Feature
-
-```
-POST /feature
-```
-
+### `POST /feature`
 Creates a new feature flag.
 
 **Request Body**
@@ -317,15 +300,12 @@ Creates a new feature flag.
 }
 ```
 
+**Response** `201 Created`
+
 ---
 
-### Update Feature
-
-```
-PUT /feature
-```
-
-Updates the status of a feature.
+### `PUT /feature`
+Updates an existing feature flag (enable/disable, change rollout %).
 
 **Request Body**
 ```json
@@ -336,15 +316,12 @@ Updates the status of a feature.
 }
 ```
 
+**Response** `200 OK`
+
 ---
 
-### Delete Feature
-
-```
-DELETE /feature
-```
-
-Removes a feature flag.
+### `DELETE /feature`
+Removes a feature flag permanently.
 
 **Request Body**
 ```json
@@ -353,66 +330,75 @@ Removes a feature flag.
 }
 ```
 
+**Response** `200 OK`
+
 ---
 
-### Evaluate Feature for User
+### `GET /feature/{feature_name}/{user_id}`
+Evaluates whether a feature is enabled for a specific user.
 
+**Example**
 ```
-GET /feature/{feature_name}/{user_id}
+GET /feature/ai_search/123
 ```
 
-Returns whether a feature is enabled for a specific user.
-
-Example response:
-
-```
+**Response**
+```json
 {
- "feature": "ai_search",
- "enabled": true
+  "feature": "ai_search",
+  "enabled": true
 }
 ```
 
 ---
 
-# Example Feature Evaluation Flow
+## Getting Started
 
-1. User opens application.
-2. Application calls the feature evaluation endpoint.
-3. System checks Redis for cached feature data.
-4. If cache is missing, database is queried.
-5. The user's ID is hashed to determine the rollout bucket.
-6. If the bucket falls within the rollout percentage, the feature is enabled.
-7. The result is returned to the application.
+### Prerequisites
 
----
+- [Docker](https://www.docker.com/) and Docker Compose installed
 
-# Running the Project
+### 1. Clone the repository
 
-### Clone the repository
-
-```
+```bash
 git clone <repository-url>
+cd feature-flag-service
 ```
 
----
+### 2. Start all services
 
-### Start the system
-
-```
+```bash
 docker compose up --build
 ```
 
----
+This starts:
+- The **FastAPI** application on port `8000`
+- **PostgreSQL** database
+- **Redis** cache
 
-### Access API documentation
+### 3. Access the API docs
 
-Open:
+Open your browser and navigate to:
 
 ```
-http://127.0.0.1:8000/docs
+http://localhost:8000/docs
 ```
 
-This provides interactive API documentation generated by **FastAPI**.
+FastAPI auto-generates interactive Swagger documentation where you can test all endpoints directly.
+
+### 4. Create your first feature flag
+
+```bash
+curl -X POST http://localhost:8000/feature \
+  -H "Content-Type: application/json" \
+  -d '{"feature_name": "ai_search", "enabled": true, "rollout_percentage": 20}'
+```
+
+### 5. Evaluate for a user
+
+```bash
+curl http://localhost:8000/feature/ai_search/12345
+```
 
 ---
 
@@ -438,7 +424,7 @@ PUT /feature
 # 4. No redeployment needed. All users are back on the stable experience.
 ```
 
-
+---
 
 ## Future Improvements
 
@@ -454,9 +440,7 @@ PUT /feature
 
 ---
 
-# Key Learnings
-
-Building this system provided hands-on experience with:
+## Key Concepts Demonstrated
 
 - REST API design with **FastAPI**
 - **Cache-aside** pattern with Redis
@@ -464,5 +448,3 @@ Building this system provided hands-on experience with:
 - **Microservice architecture** with clear separation of concerns
 - **Containerized deployment** with Docker Compose
 - **Database-driven configuration** decoupled from application code
-
-

@@ -1,0 +1,26 @@
+services:
+
+  api:
+    build: .
+    container_name: feature_flag_api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15
+    container_name: feature_flag_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: feature_flags
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: feature_flag_cache
+    ports:
+      - "6379:6379"
